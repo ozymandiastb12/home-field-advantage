@@ -1,0 +1,104 @@
+# NFL Home Field Advantage Analysis (2014-2024)
+# Focus: All 32 NFL Teams with Team Colors
+library(nflfastR)
+library(dplyr)
+library(ggplot2)
+
+# Load NFL data
+cat("Loading nflfastR data...\n")
+seasons <- 2014:2024
+pbp_data <- load_pbp(seasons)
+
+# Extract game-level data
+games_data <- pbp_data %>%
+  filter(!is.na(game_id), !is.na(season), season_type == "REG") %>%  # Regular season only
+  group_by(game_id, season, home_team, away_team) %>%
+  summarise(
+    home_score = max(total_home_score, na.rm = TRUE),
+    away_score = max(total_away_score, na.rm = TRUE),
+    .groups = 'drop'
+  ) %>%
+  filter(home_score >= 0, away_score >= 0) %>%
+  mutate(home_margin = home_score - away_score)
+
+# Calculate Home Field Advantage
+team_hfa <- games_data %>%
+  group_by(home_team) %>%
+  summarise(
+    home_games = n(),
+    avg_home_margin = mean(home_margin, na.rm = TRUE),
+    .groups = 'drop'
+  ) %>%
+  left_join(
+    games_data %>%
+      group_by(away_team) %>%
+      summarise(
+        away_games = n(),
+        avg_away_margin = mean(-home_margin, na.rm = TRUE),
+        .groups = 'drop'
+      ),
+    by = c("home_team" = "away_team")
+  ) %>%
+  mutate(
+    total_games = home_games + away_games,
+    home_field_advantage = avg_home_margin - avg_away_margin
+  ) %>%
+  filter(total_games >= 80) %>%  # Minimum games for 11 seasons
+  arrange(desc(home_field_advantage))
+
+# NFL team colors
+team_colors <- c(
+  "ARI" = "#97233F", "ATL" = "#A71930", "BAL" = "#241773", "BUF" = "#00338D",
+  "CAR" = "#0085CA", "CHI" = "#0B162A", "CIN" = "#FB4F14", "CLE" = "#311D00",
+  "DAL" = "#003594", "DEN" = "#FB4F14", "DET" = "#0076B6", "GB" = "#203731",
+  "HOU" = "#03202F", "IND" = "#002C5F", "JAX" = "#006778", "KC" = "#E31837",
+  "LV" = "#000000", "LAC" = "#0080C6", "LAR" = "#003594", "MIA" = "#008E97",
+  "MIN" = "#4F2683", "NE" = "#002244", "NO" = "#D3BC8D", "NYG" = "#0B2265",
+  "NYJ" = "#125740", "PHI" = "#004C54", "PIT" = "#FFB612", "SF" = "#AA0000",
+  "SEA" = "#002244", "TB" = "#D50A0A", "TEN" = "#0C2340", "WAS" = "#5A1414"
+)
+
+# Add team colors
+team_hfa <- team_hfa %>%
+  mutate(team_color = ifelse(home_team %in% names(team_colors), team_colors[home_team], "#4472C4"))
+
+cat("\n=== TOP 15 NFL HOME FIELD ADVANTAGES ===\n")
+print(team_hfa %>% select(home_team, home_field_advantage, avg_home_margin, avg_away_margin, total_games) %>% head(15))
+
+# Create visualization with team colors
+hfa_plot <- team_hfa %>%
+  head(10) %>%
+  ggplot(aes(x = reorder(home_team, home_field_advantage), y = home_field_advantage)) +
+  geom_col(aes(fill = team_color), alpha = 0.9, color = "white", linewidth = 0.5) +
+  scale_fill_identity() +
+  geom_text(aes(label = paste0("+", round(home_field_advantage, 1))), 
+            hjust = -0.1, size = 4, fontface = "bold", color = "white") +
+  coord_flip() +
+  labs(
+    title = "Top 10 NFL Home Field Advantages",
+    subtitle = "Difference between home margin and away margin (2014-2024)",
+    x = "Team",
+    y = "Home Field Advantage (points)",
+    caption = "Regular season only | Min. 80 total games | Data: nflfastR"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", color = "white"),
+    plot.subtitle = element_text(size = 12, color = "white"),
+    axis.text = element_text(size = 11, color = "white"),
+    axis.title = element_text(size = 12, color = "white"),
+    plot.caption = element_text(size = 10, color = "white"),
+    panel.background = element_rect(fill = "#1a1a1a", color = NA),
+    plot.background = element_rect(fill = "#1a1a1a", color = NA),
+    panel.grid.major.x = element_line(color = "#333333", linewidth = 0.3),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank()
+  )
+
+print(hfa_plot)
+
+# Summary stats
+cat("\n=== NFL SUMMARY STATISTICS ===\n")
+cat("Average NFL home field advantage:", round(mean(team_hfa$home_field_advantage), 2), "points\n")
+cat("Median NFL home field advantage:", round(median(team_hfa$home_field_advantage), 2), "points\n")
+cat("Teams with negative home field advantage:", sum(team_hfa$home_field_advantage < 0), "\n")
