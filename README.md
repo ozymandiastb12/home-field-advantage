@@ -1,6 +1,6 @@
-# CFB Home Field Advantage Analysis
+# Home Field Advantage Analysis
 
-Analysis of Power 4 college football home field advantages (2014-2024).
+Analysis of home field advantages in college football (Power 4) and NFL (2014-2024).
 
 ## What it does
 Calculates which teams perform significantly better at home vs away by measuring the difference in margin of victory.
@@ -9,23 +9,28 @@ Calculates which teams perform significantly better at home vs away by measuring
 
 ## Requirements
 ```r
-library(cfbfastR)
+library(cfbfastR)  # For college football
+library(nflfastR)  # For NFL
 library(dplyr) 
 library(ggplot2)
 ```
 
 ## Usage
 ```r
-source("hfa_analysis.R")
+# College Football (Power 4)
+source("cfb_hfa_analysis.R")
+
+# NFL (All 32 teams)
+source("nfl_hfa_analysis.R")
 ```
 
 ## Output
-- Top 15 Power 4 teams ranked by home field advantage
+- Top 15 teams ranked by home field advantage
 - Visualization of top 10 with team colors
 - Summary statistics
 
 ## Data
 - 11 seasons (2014-2024)
-- Power 4 conferences only (SEC, Big 12, Big Ten, ACC)
-- Minimum 50 games per team
-- Source: cfbfastR
+- **CFB:** Power 4 conferences only (SEC, Big 12, Big Ten, ACC), min. 50 games
+- **NFL:** All 32 teams, regular season only, min. 80 games
+- Sources: cfbfastR, nflfastR
