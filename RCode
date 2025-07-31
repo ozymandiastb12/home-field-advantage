@@ -1,0 +1,138 @@
+# CFB Home Field Advantage Analysis (2014-2024)
+# Focus: Power 4 Teams Only with Team Colors
+library(cfbfastR)
+library(dplyr)
+library(ggplot2)
+
+# Load cfbfastR data
+cat("Loading cfbfastR data...\n")
+pbp_data <- load_cfb_pbp(2014:2024)
+
+# Extract game-level data
+games_data <- pbp_data %>%
+  filter(!is.na(game_id), !is.na(season)) %>%
+  group_by(game_id, season, home, away) %>%
+  summarise(
+    home_points = last(pos_team_score[pos_team == home]),
+    away_points = last(pos_team_score[pos_team == away]),
+    home_points_max = max(pos_team_score[pos_team == home], na.rm = TRUE),
+    away_points_max = max(pos_team_score[pos_team == away], na.rm = TRUE),
+    .groups = 'drop'
+  ) %>%
+  mutate(
+    home_points = ifelse(is.na(home_points) | home_points == -Inf, home_points_max, home_points),
+    away_points = ifelse(is.na(away_points) | away_points == -Inf, away_points_max, away_points)
+  ) %>%
+  filter(home_points >= 0, away_points >= 0, 
+         home_points != -Inf, away_points != -Inf) %>%
+  mutate(home_margin = home_points - away_points) %>%
+  select(-home_points_max, -away_points_max)
+
+# Calculate Home Field Advantage
+team_hfa <- games_data %>%
+  group_by(home) %>%
+  summarise(
+    home_games = n(),
+    avg_home_margin = mean(home_margin, na.rm = TRUE),
+    .groups = 'drop'
+  ) %>%
+  left_join(
+    games_data %>%
+      group_by(away) %>%
+      summarise(
+        away_games = n(),
+        avg_away_margin = mean(-home_margin, na.rm = TRUE),
+        .groups = 'drop'
+      ),
+    by = c("home" = "away")
+  ) %>%
+  mutate(
+    total_games = home_games + away_games,
+    home_field_advantage = avg_home_margin - avg_away_margin
+  ) %>%
+  filter(total_games >= 50) %>%
+  arrange(desc(home_field_advantage))
+
+# Define P4 teams manually (easier than trying to extract from conference columns)
+p4_teams <- c(
+  # SEC
+  "LSU", "Texas A&M", "Tennessee", "Georgia", "Alabama", "Auburn", "Florida", 
+  "South Carolina", "Kentucky", "Mississippi State", "Missouri", "Arkansas", 
+  "Vanderbilt", "Ole Miss", "Texas", "Oklahoma",
+  # Big 12  
+  "Oklahoma State", "West Virginia", "Kansas", "Kansas State", "Iowa State", 
+  "TCU", "Baylor", "Texas Tech", "Cincinnati", "Houston", "UCF", "BYU",
+  # Big Ten
+  "Ohio State", "Michigan", "Penn State", "Michigan State", "Wisconsin", 
+  "Iowa", "Minnesota", "Illinois", "Northwestern", "Indiana", "Purdue", 
+  "Nebraska", "Maryland", "Rutgers", "Oregon", "Washington", "USC", "UCLA",
+  # ACC
+  "Clemson", "Florida State", "Miami", "North Carolina", "NC State", "Duke", 
+  "Virginia Tech", "Virginia", "Wake Forest", "Georgia Tech", "Boston College", 
+  "Syracuse", "Pittsburgh", "Louisville", "SMU", "California", "Stanford"
+)
+
+# Team colors
+team_colors <- c(
+  "LSU" = "#461D7C", "Texas A&M" = "#500000", "Tennessee" = "#FF8200",
+  "Georgia" = "#BA0C2F", "Alabama" = "#9E1B32", "Auburn" = "#0C2340",
+  "Florida" = "#0021A5", "South Carolina" = "#73000A", "Kentucky" = "#0033A0",
+  "Mississippi State" = "#5D1725", "Missouri" = "#F1B82D", "Arkansas" = "#9D2235",
+  "Vanderbilt" = "#866D4B", "Ole Miss" = "#CE1126", "Texas" = "#BF5700",
+  "Oklahoma" = "#841617", "Oklahoma State" = "#FF7300", "West Virginia" = "#002855",
+  "Kansas" = "#0051BA", "Kansas State" = "#512888", "Iowa State" = "#C8102E",
+  "TCU" = "#4D1979", "Baylor" = "#003015", "Texas Tech" = "#CC0000",
+  "Cincinnati" = "#E00122", "Houston" = "#C8102E", "UCF" = "#000000",
+  "BYU" = "#002E5D", "Ohio State" = "#BB0000", "Michigan" = "#00274C",
+  "Penn State" = "#041E42", "Michigan State" = "#18453B", "Wisconsin" = "#C5050C",
+  "Iowa" = "#FFCD00", "Minnesota" = "#7A0019", "Illinois" = "#13294B",
+  "Northwestern" = "#4E2A84", "Indiana" = "#990000", "Purdue" = "#CEB888",
+  "Nebraska" = "#D00000", "Maryland" = "#E03A3E", "Rutgers" = "#CC0033",
+  "Clemson" = "#F56600", "Florida State" = "#782F40", "Miami" = "#F47321",
+  "North Carolina" = "#13294B", "NC State" = "#CC0000", "Duke" = "#003087",
+  "Virginia Tech" = "#861F41", "Virginia" = "#232D4B", "Wake Forest" = "#9E7E38",
+  "Georgia Tech" = "#B3A369", "Boston College" = "#8B0000", "Syracuse" = "#D44500",
+  "Pittsburgh" = "#003594", "Louisville" = "#AD0000", "Oregon" = "#154733",
+  "Washington" = "#4B2E83", "USC" = "#990000", "UCLA" = "#2D68C4",
+  "SMU" = "#CC0000", "California" = "#003262", "Stanford" = "#8C1515"
+)
+
+# Filter to P4 teams only
+p4_hfa <- team_hfa %>%
+  filter(home %in% p4_teams) %>%
+  mutate(team_color = ifelse(home %in% names(team_colors), team_colors[home], "#4472C4"))
+
+cat("\n=== TOP 15 POWER 4 HOME FIELD ADVANTAGES ===\n")
+print(p4_hfa %>% select(home, home_field_advantage, avg_home_margin, avg_away_margin, total_games) %>% head(15))
+
+# Create visualization with team colors
+hfa_plot <- p4_hfa %>%
+  head(10) %>%
+  ggplot(aes(x = reorder(home, home_field_advantage), y = home_field_advantage)) +
+  geom_col(aes(fill = team_color), alpha = 0.9, color = "white", size = 0.5) +
+  scale_fill_identity() +
+  geom_text(aes(label = paste0("+", round(home_field_advantage, 1))), 
+            hjust = -0.1, size = 4, fontface = "bold", color = "white") +
+  coord_flip() +
+  labs(
+    title = "Top 10 Power 4 Home Field Advantages",
+    subtitle = "Difference between home margin and away margin (2014-2024)",
+    x = "Team",
+    y = "Home Field Advantage (points)",
+    caption = "Min. 50 total games | Data: cfbfastR"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", color = "white"),
+    plot.subtitle = element_text(size = 12, color = "white"),
+    axis.text = element_text(size = 11, color = "white"),
+    axis.title = element_text(size = 12, color = "white"),
+    plot.caption = element_text(size = 10, color = "white"),
+    panel.background = element_rect(fill = "#1a1a1a", color = NA),
+    plot.background = element_rect(fill = "#1a1a1a", color = NA),
+    panel.grid.major.x = element_line(color = "#333333", size = 0.3),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank()
+  )
+
+print(hfa_plot)
